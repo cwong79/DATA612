@@ -1,0 +1,194 @@
+---
+title: "Project 2"
+author: "Calvin Wong"
+date: "6/16/2019"
+output: html_document
+---
+
+The goal of this assignment is for you to try out different ways of implementing and configuring a recommender, and to evaluate your different approaches.
+
+For assignment 2, start with an existing dataset of user-item ratings, such as our toy books dataset, MovieLens, Jester [http://eigentaste.berkeley.edu/dataset/] or another dataset of your choosing. Implement at least two of these recommendation algorithms:
+• Content-Based Filtering
+• User-User Collaborative Filtering
+• Item-Item Collaborative Filtering
+
+```{r}
+library(recommenderlab)
+library(ggplot2)
+library(tidyverse)
+```
+
+You should evaluate and compare different approaches, using different algorithms, normalization techniques, similarity methods, neighborhood sizes, etc. You don’t need to be exhaustive—these are just some suggested possibilities.
+
+You may use the course text’s recommenderlab or any other library that you want.
+
+###MovieLense and Recommenderlab
+
+I will use the course's text for this assignment. 
+
+```{r}
+set.seed(17)
+data(MovieLense)
+
+MovieLense_vc <- as.vector(MovieLense@data)
+unique(MovieLense_vc)
+table(MovieLense_vc)
+
+##Gorakala, Suresh K.. Building a Recommendation System with R. Packt Publishing. Kindle Edition.
+```
+
+###MovieLense Visualization
+
+Let's see how the rankings was distributed, what were the top 10 movies and the distribution of average ratings.
+
+```{r}
+MovieLense_vc <- MovieLense_vc[MovieLense_vc != 0] 
+MovieLense_vc <- factor(MovieLense_vc)
+views_per_movie <- colCounts(MovieLense)
+
+qplot(MovieLense_vc) + ggtitle("Distribution of the Ratings")
+
+
+table_views <- data.frame(
+  movie = names(views_per_movie),
+  views = views_per_movie
+)
+
+table_views <- table_views[order(table_views$views,
+                                 decreasing = TRUE), ]
+
+ggplot(table_views[1:10, ], aes(x=movie, y=views)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  ggtitle("Top 10 Movies")
+
+average_ratings <- colMeans(MovieLense)
+qplot(average_ratings) + stat_bin(binwidth = 1) + ggtitle("Distribution of the Average Movie Rating")
+
+##Gorakala, Suresh K.. Building a Recommendation System with R. Packt Publishing. Kindle Edition. 
+```
+
+###Data Preparation
+
+```{r}
+MovieLense_vc <- MovieLense[rowCounts(MovieLense) > 50,
+                             colCounts(MovieLense) > 100]
+MovieLense_vc_norm <- normalize(MovieLense_vc)
+
+which_train <- sample(x = c(TRUE, FALSE), size = nrow(MovieLense_vc_norm), replace = TRUE, prob = c(0.7, 0.3))
+head(which_train)
+recc_data_train <- MovieLense_vc[which_train, ]
+recc_data_test <- MovieLense_vc[!which_train, ]
+
+##Gorakala, Suresh K.. Building a Recommendation System with R. Packt Publishing. Kindle Edition. 
+```
+
+###IBCF
+
+Item-based model which will recommend 10 different users in the test set. This model will consider that user's items and make recommendation on similar items.
+
+```{r}
+model <- Recommender(data = recc_data_train, method = "IBCF",
+                     parameter = list(k=30))
+model
+
+n_recommend <- 10
+predicted <- predict(object = model, newdata = recc_data_test, n = n_recommend)
+predicted
+
+test_user_one <- predicted@items[[1]]
+test_movies_one <- predicted@itemLabels[test_user_one]
+test_movies_one
+
+recommender_matrix <- sapply(predicted@items, function(x){
+  colnames(MovieLense_vc)[x]
+})
+recommender_matrix[, 1:4]
+
+items <- factor(table(recommender_matrix))
+items <- sort(items, decreasing = TRUE)
+top_items <- data.frame(names(items), items)
+head(top_items)
+
+##Gorakala, Suresh K.. Building a Recommendation System with R. Packt Publishing. Kindle Edition.
+```
+
+###UBCF
+
+Likewise, this is user-based model which will review similar users and make recommendations on what those similar users did.
+
+```{r}
+model <- Recommender(data = recc_data_train, method = "UBCF")
+model
+
+n_recommend <- 10
+predicted <- predict(object = model, newdata = recc_data_test, n = n_recommend)
+predicted
+
+test_user_one <- predicted@items[[1]]
+test_movies_one <- predicted@itemLabels[test_user_one]
+test_movies_one
+
+recommender_matrix <- sapply(predicted@items, function(x){
+  colnames(MovieLense_vc)[x]
+})
+recommender_matrix[, 1:4]
+
+items <- factor(table(recommender_matrix))
+items <- sort(items, decreasing = TRUE)
+top_items <- data.frame(names(items), items)
+head(top_items)
+
+##Gorakala, Suresh K.. Building a Recommendation System with R. Packt Publishing. Kindle Edition.
+```
+
+Please provide at least one graph, and a textual summary of your findings and recommendations.
+
+###Model Comparison
+
+Based on the RSME values, we can see that the UBCF method outperforms the IBCF method by 0.37. The UBCF utilizes user similarities and the IBCF tries to make a prediction by utilizing item similarities. It means that the IBCF method may use only half of the total information from the given data set, therefore, it may explain why the UBCF method is superior.
+
+```{r}
+folds <- 4
+items_keep <- 15
+rating_threshold <- 3
+eval_sets <- evaluationScheme(data = MovieLense_vc, method = 
+                                "cross-validation", k = folds,
+                              given = items_keep, goodRating = rating_threshold)
+eval_model <- "IBCF"
+parameters <- NULL
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = eval_model, parameter = parameters)
+n_recommend <- 5
+eval_predicted <- predict(object = eval_recommender, newdata =
+                            getData(eval_sets, "known"), n=n_recommend,
+                          type = "ratings")
+eval_accuracy_IBCF <- calcPredictionAccuracy(x = eval_predicted,
+                                        data = getData(eval_sets, 
+                                                       "unknown"),
+                                        byUser = FALSE)
+
+
+folds <- 4
+items_keep <- 15
+rating_threshold <- 3
+eval_sets <- evaluationScheme(data = MovieLense_vc, method = 
+                                "cross-validation", k = folds,
+                              given = items_keep, goodRating = rating_threshold)
+eval_model <- "UBCF"
+parameters <- NULL
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = eval_model, parameter = parameters)
+n_recommend <- 5
+eval_predicted <- predict(object = eval_recommender, newdata =
+                            getData(eval_sets, "known"), n=n_recommend,
+                          type = "ratings")
+eval_accuracy_UBCF <- calcPredictionAccuracy(x = eval_predicted,
+                                        data = getData(eval_sets, 
+                                                       "unknown"),
+                                        byUser = FALSE)
+
+eval_accuracy_IBCF
+eval_accuracy_UBCF
+```
+
