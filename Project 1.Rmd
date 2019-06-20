@@ -1,0 +1,131 @@
+---
+title: "Project 1"
+author: "Calvin Wong"
+date: "6/5/2019"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+In this first assignment, we’ll attempt to predict ratings with very little information. We’ll first look at just raw averages across all (training dataset) users. We’ll then account for “bias” by normalizing across users and across items.
+
+You’ll be working with ratings in a user-item matrix, where each rating may be (1) assigned to a training dataset, (2) assigned to a test dataset, or (3) missing. 
+
+Please code as much of your work as possible in R or Python. You may use standard functions (e.g. from base R and the tidyverse). Your project should be delivered in an R Markdown or a Jupyter notebook, then the notebook should be saved into a GitHub repository. You should include a link to your GitHub repository in your assignment submission link. Preparation. Start by watching Parts K through P from this playlist from the Coursera/Stanford Networks Illustrated course (total run time is about 22 minutes):
+
+•Briefly describe the recommender system that you’re going to build out from a business perspective, e.g. “This system recommends data science books to readers.”
+
+The recommender system I will be using for this project is a collaborative filtering recommender system. This approach considers user preferences to determine how they will rank an unknown item. 
+
+I will perform the following activities to meet the assignment criteria:
+
+1) Create a 5 x 5 dataframe 
+2) Split the data into a train and test set
+3) Train the data
+4) Run the model unto the test set
+5) Compare model accuracy
+
+•Find a dataset, or build out your own toy dataset. As a minimum requirement for complexity,please include numeric ratings for at least five users, across at least five items, with some missing data.
+
+```{r}
+user <- c("John", "Dora", "Spike", "Looney", "Sara")
+movie <-c("John Wick", "Godzilla", "Jumanji", "Star Wars", "Rambo")
+rating <- matrix(c(3,4,2,5,NA,3,4,2,3,3,NA,NA,4,4,4,3,5,NA,4,2,2,NA,1,NA,4),nrow=5 , byrow=TRUE, dimnames = list(user, movie))
+rating.df <- as.data.frame(rating)
+rating.df
+```
+
+•Load your data into (for example) an R or pandas dataframe, a Python dictionary or list of lists, (oranother data structure of your choosing). From there, create a user-item matrix.
+
+•If you choose to work with a large dataset, you’re encouraged to also create a small, relativelydense “user-item” matrix as a subset so that you can hand-verify your calculations.
+
+•Break your ratings into separate training and test datasets.
+
+```{r}
+set.seed(32)
+
+df_long <- rating.df %>% 
+            rownames_to_column("user") %>% 
+            gather(`John Wick`:`Rambo`,
+                    key = "item",
+                    value = "rating")
+
+test_rating <- df_long %>% sample_frac(0.3, replace = F)
+
+train_rating <- df_long %>% 
+                    anti_join(test_rating, by = c("user", "item")) %>% 
+                    rbind(test_rating %>% mutate(rating = NA))
+```
+
+
+•Using your training data, calculate the raw average (mean) rating for every user-item combination.
+
+```{r}
+raw_average <- mean(train_rating$rating, na.rm = TRUE)
+raw_average
+```
+
+•Calculate the RMSE for raw average for both your training data and your test data.
+
+```{r}
+rmse_training <- sqrt(sum((train_rating$rating[!is.na(train_rating$rating)] - raw_average)^2) /
+                         length(which(!is.na(train_rating$rating))))
+
+rmse_test <- sqrt(sum((test_rating$rating[!is.na(test_rating$rating)] - raw_average)^2) /
+                        length(which(!is.na(test_rating$rating))))
+
+rmse_training
+rmse_test
+```
+
+•Using your training data, calculate the bias for each user and each item.
+
+```{r}
+user_bias <- train_rating %>% 
+              filter(!is.na(rating)) %>% 
+              group_by(user) %>%
+              summarise(sum = sum(rating), count = n()) %>% 
+              mutate(bias = sum/count-raw_average) %>%
+              select(user, userBias = bias) 
+user_bias
+
+item_bias <- train_rating %>% 
+                filter(!is.na(rating)) %>% 
+                group_by(item) %>%
+                summarise(sum = sum(rating), count = n()) %>% 
+                mutate(bias = sum/count-raw_average) %>%
+                select(item, itemBias = bias)
+item_bias
+```
+
+•From the raw average, and the appropriate user and item biases, calculate the baseline predictors for every user-item combination.
+
+```{r}
+userBias <- user_bias$userBias
+itemBias <- item_bias$itemBias
+
+baseline <- train_rating %>% 
+                  left_join(user_bias, by = "user") %>%
+                  left_join(item_bias, by = "item") %>%
+                  mutate(RawAvg = raw_average) %>%
+                  mutate(Baseline = raw_average + userBias + itemBias) 
+baseline$Baseline <- ifelse(baseline$Baseline < 1, 1, baseline$Baseline)
+baseline$Baseline <- ifelse(baseline$Baseline > 5, 5, baseline$Baseline)
+
+baseline
+```
+
+•Calculate the RMSE for the baseline predictors for both your training data and your test data.
+
+```{r}
+rmse_baseline <- sqrt(sum((baseline$Baseline - raw_average)^2) /
+                        length(baseline$Baseline))
+rmse_baseline
+```
+
+•Summarize your results.
+
+The issue with my results is that my baseline results contain both training and test set. The block of code provided seems to include the entire dataframe rather than split into two sets. However, when comparing the RMSE of both training set and baseline, the RMSE of baseline seems to be higher. I believe setting the maximum ranking of 5 caused the variance as there were some calculated values above 5.
